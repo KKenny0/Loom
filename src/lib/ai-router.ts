@@ -118,17 +118,19 @@ function spawnCodexCLI(prompt: string, sources: Array<{ id: string; content: str
 // --- BYOK API ---
 
 async function callByokAPI(prompt: string): Promise<AIResponse> {
-  const apiKey = process.env.LOOM_API_KEY;
+  const { resolveApiKey, resolveApiBase, resolveModel } = await import('./config.js');
+  const apiKey = resolveApiKey();
   if (!apiKey) {
     throw new Error(
       'No AI backend available.\n' +
-      'Install Claude CLI (claude) or Codex CLI (codex), or set LOOM_API_KEY for API access.\n' +
-      'Optional: LOOM_API_BASE (default: https://api.openai.com/v1), LOOM_MODEL (default: gpt-4o).',
+      'Install Claude CLI (claude) or Codex CLI (codex), or configure an API key:\n' +
+      '  loom-research config set apiKey <your-key>\n' +
+      'Optional: apiBase (default: https://api.openai.com/v1), model (default: gpt-4o).',
     );
   }
 
-  const baseURL = process.env.LOOM_API_BASE || 'https://api.openai.com/v1';
-  const model = process.env.LOOM_MODEL || 'gpt-4o';
+  const baseURL = resolveApiBase() || 'https://api.openai.com/v1';
+  const model = resolveModel() || 'gpt-4o';
 
   const client = new OpenAI({ apiKey, baseURL });
 

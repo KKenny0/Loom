@@ -1,15 +1,20 @@
 # Loom
 
-A CLI that fetches web sources, sends them to an AI, and enforces research quality rules on the output. The result is a structured report with evidence tags, source citations, and a compliance check.
+**Source-grounded comparison and verification.** Give it a topic — it finds sources, compares them, and shows you where they agree, disagree, or leave gaps. Give it a text and sources — it checks every claim.
 
-## How it works
+No AI hallucination smoothing. Every claim cites a source. Every conflict is named.
 
-```
-URLs ──► Source Fetcher ──► Prompt Builder ──► AI Router ──► Output Processor
-          (Readability)     (quality rules +    (claude /      (evidence tags,
-                             sources + topic)    codex /        compliance
-                                                 BYOK API)      report)
-```
+## Try it now (no install)
+
+**[Source Ground on ChatGPT](https://chatgpt.com/g/g-6a0ea2550d6c81919007109aad61a089-source)** — the same quality methodology, zero setup. Paste URLs, get a structured comparison.
+
+## What it does
+
+**Compare** — give a topic (and optionally source URLs), get a two-layer output:
+- **Card** (stdout) — quick scan: agreements, disagreements, gaps, bottom line
+- **Report** (file or `--full`) — deep dive with findings, conflicts, inferences, compliance check
+
+**Verify** — give a text file and source URLs, get a claim-by-claim verification: which claims are supported, contradicted, or unsupported.
 
 ## Install
 
@@ -19,111 +24,109 @@ pnpm install
 pnpm build
 ```
 
-Run locally without building:
+Run without building:
 
 ```bash
-pnpm dev <topic> -s <url1> <url2> ...
+pnpm dev -- compare "React vs Vue for enterprise" -s <url1> <url2>
 ```
 
 ## Usage
 
+### Compare
+
 ```bash
-# Basic — prints to stdout
-loom-research "Electric vehicle market trends 2025" \
-  -s https://example.com/article1 \
-     https://example.com/article2
+# Auto-source: AI searches for sources (needs Claude CLI or Codex CLI)
+loom compare "Electric vehicle market trends 2025"
 
-# Save to file
-loom-research "Electric vehicle market trends 2025" \
-  -s https://example.com/article1 \
-  -o report.md
+# Manual sources
+loom compare "React vs Vue for enterprise" \
+  -s https://example.com/article1 https://example.com/article2
 
-# Override model (BYOK mode only)
-loom-research "Topic" -s <url> -m gpt-4o-mini
+# Card → stdout, full report → file
+loom compare "Topic" -s <url1> <url2> -o report.md
+
+# Card + report → stdout
+loom compare "Topic" -s <url1> <url2> --full
+
+# Shortcut (compare is the default command)
+loom "React vs Vue for enterprise"
+```
+
+### Verify
+
+```bash
+# Verify a file against sources
+loom verify report.md -s https://example.com/article1 https://example.com/article2
+
+# Verify from stdin
+cat draft.txt | loom verify - -s <url1> <url2>
+
+# Output to file
+loom verify report.md -s <url1> <url2> -o check.md
+```
+
+### Config
+
+```bash
+loom config set apiKey sk-your-key       # BYOK API key
+loom config set apiBase https://api.openai.com/v1
+loom config set model gpt-4o
+loom config list                          # show all (apiKey masked)
+loom config reset                         # wipe all config
 ```
 
 ## AI backends
 
-Loom detects available AI backends automatically, in this order:
+Loom detects backends automatically:
 
 | Priority | Backend | Requirement |
 |----------|---------|-------------|
-| 1 | Claude CLI | `claude` installed and on PATH |
-| 2 | Codex CLI | `codex` installed and on PATH |
-| 3 | BYOK API | API key configured (see below) |
+| 1 | Claude CLI | `claude` on PATH |
+| 2 | Codex CLI | `codex` on PATH |
+| 3 | BYOK API | API key configured |
 
-If a CLI is found, it's used directly. No API key needed.
+CLI backends get web search tools in auto-source mode. No API key needed if a CLI is found.
 
-### Configuring the BYOK API
+Config location: `%APPDATA%\loom\config.json` (Windows) or `~/.loom/config.json` (macOS/Linux).
 
-When no CLI is available, Loom falls back to any OpenAI-compatible API.
-
-```bash
-# Set your API key (stored locally, not in environment variables)
-loom-research config set apiKey sk-your-key-here
-
-# Optional: change the endpoint and model
-loom-research config set apiBase https://api.openai.com/v1
-loom-research config set model gpt-4o
-```
-
-Config is stored at:
-- **Windows**: `%APPDATA%\loom\config.json`
-- **macOS/Linux**: `~/.loom/config.json`
-
-API keys are masked in `config list` and `config get` output.
-
-```bash
-loom-research config list        # show all settings
-loom-research config get apiKey  # show specific key (masked)
-loom-research config delete apiKey  # remove a key
-loom-research config reset       # delete all config
-```
-
-You can also pass the key inline or via environment variables. Resolution order:
-
-1. `--api-key` CLI flag
-2. `LOOM_API_KEY` environment variable
-3. Local config file
+Credential resolution: `--api-key` flag > `LOOM_API_KEY` env var > config file.
 
 ## Quality rules
 
-Every research report goes through these checks:
+These are hardcoded, not configurable. Research integrity doesn't have settings.
 
-1. **Source citations** — every factual claim must reference a source (S1, S2, ...). Unsourced claims are marked `[待验证]`.
-2. **Conflict preservation** — when sources disagree, the disagreement is stated explicitly. No smoothing.
-3. **Evidence weight** — each conclusion gets a tag: `[Strong]`, `[Moderate]`, `[Weak]`, or `[Contested]`.
-4. **Inference marking** — the report separates "the source says" from "I'm inferring."
-5. **Uncertainty** — if evidence is thin, the report says so.
-6. **Pre-delivery scan** — a final pass checks that no disagreements were hidden.
+1. **Cite sources on every claim** — S1, S2, etc. No source? Mark it `[待验证]`.
+2. **Preserve conflicts** — sources disagree? Say so explicitly. No smoothing.
+3. **Tag evidence weight** — `[Strong]`, `[Moderate]`, `[Weak]`, or `[Contested]`.
+4. **Mark inferences** — "the source says" vs "I'm inferring".
+5. **Admit uncertainty** — thin evidence gets called thin.
+6. **Pre-delivery scan** — check that no disagreements were hidden.
 
-Compliance is verified by post-processing the AI output with pattern matching — not by asking the AI to self-report.
-
-## Output structure
-
-Every report includes:
-
-- **Summary** — one paragraph
-- **Findings** — each with source references and evidence tags
-- **Conflicts & Disagreements** — who says what
-- **Inferences vs Source Claims** — clearly separated
-- **Confidence & Caveats** — honest assessment
-- **Loom Compliance Report** — automated check results
+Compliance is verified programmatically, not by AI self-report.
 
 ## Architecture
 
 ```
+CLI (src/cli.ts)
+  ├── fetchSources()       ← source-fetcher.ts (Readability + JSDOM)
+  ├── buildComparePrompt() / buildVerifyPrompt()  ← prompt-builder.ts
+  ├── routeToAI()          ← ai-router.ts (claude CLI → codex CLI → BYOK API)
+  └── processOutput()      ← output-processor.ts (card/report split + compliance)
+```
+
+```
 src/
-├── cli.ts                  # Commander CLI entry point
+├── cli.ts                     Commander entry point
 ├── lib/
-│   ├── ai-router.ts        # Backend detection and routing
-│   ├── config.ts           # Local config management
-│   ├── output-processor.ts # Compliance checks and rendering
-│   ├── prompt-builder.ts   # Assembles prompt with quality rules
-│   ├── quality-rules.ts    # Core rules, red lines, evidence tags
-│   └── source-fetcher.ts   # URL fetching + Readability extraction
+│   ├── ai-router.ts           3-tier backend detection
+│   ├── config.ts              Local config CRUD
+│   ├── output-processor.ts    Dual-layer output + compliance checks
+│   ├── prompt-builder.ts      Prompt assembly with quality rules
+│   ├── quality-rules.ts       Core rules, red lines, evidence tags
+│   └── source-fetcher.ts      URL fetch + Readability extraction
 └── prompts/
-    └── system-prompt.md    # Full quality instructions for the AI
+    ├── compare-prompt.md      Compare mode system prompt
+    └── verify-prompt.md       Verify mode system prompt
 ```
 
 ## License
